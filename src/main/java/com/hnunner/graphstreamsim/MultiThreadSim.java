@@ -3,6 +3,7 @@ package com.hnunner.graphstreamsim;
 import java.awt.BorderLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
@@ -126,50 +127,50 @@ public class MultiThreadSim {
 					// Find 2 nodes to connect, using a weighted random method based on the degree of each node
 					// i.e. we are more likely to choose nodes with a small degree
 					
-					int count = 0;
+					int attempt = 0;
 
 					
 					Node node1 = null, node2 = null;
 					
-					final int maxDegree = graph.getNodeSet().stream().mapToInt(n -> n.getDegree()).max().getAsInt();
-					final Map<Node, Integer> nodeMap =  graph.getNodeSet().stream().collect(Collectors.toMap(n -> n, n -> maxDegree - n.getDegree() + 1));
+					final List<Node> nodes =  graph.getNodeSet().stream().collect(Collectors.toList());
 					
-					
+					// Pick 2 random nodes but give up after 3 attempts
 					do {
-						double bestValue = Double.MAX_VALUE;
+						double bestValue = Double.MIN_VALUE;
 						
-						for (Entry<Node, Integer> nodeEntry : nodeMap.entrySet()) {
+						for (Node node : nodes) {
 							// Sample an exponential distribution 
-							double value = -Math.log(rand.nextDouble()) / Double.valueOf(nodeEntry.getValue());
+							double value = -Math.log(rand.nextDouble()) / Double.valueOf(node.getDegree() + 1);
 							
-							if (value < bestValue) {
+							if (value > bestValue) {
 								bestValue = value;
 								
-								node1 = nodeEntry.getKey();
+								node1 = node;
 							}
 						}
 						
 						// Temporarily remove the first chosen node so we don't pick it again
-						nodeMap.remove(node1);
+						nodes.remove(node1);
 
-						bestValue = Double.MAX_VALUE;
-						for (Entry<Node, Integer> nodeEntry : nodeMap.entrySet()) {
+						bestValue = Double.MIN_VALUE;
+						for (Node node : nodes) {
 							// Sample an exponential distribution 
-							double value = -Math.log(rand.nextDouble()) / Double.valueOf(nodeEntry.getValue());
+							double value = -Math.log(rand.nextDouble()) / Double.valueOf(node.getDegree() + 1);
 
-							if (value < bestValue) {
+							if (value > bestValue) {
 								bestValue = value;
 								
-								node2 = nodeEntry.getKey();
+								node2 = node;
 							}
 						}
 						
-						// Restore the map so we don't have to create the whole thing again
-						nodeMap.put(node1, node1.getDegree());
+						// Restore the list so we don't have to create the whole thing again
+						nodes.add(node1);
 						
 						edgeId = "edge|" +  node1.getId() + "," + node2.getId();
+						attempt++;
 						
-					} while(edgeExists(edgeId) || count == 3);
+					} while(edgeExists(edgeId) || attempt == 3);
 					
 					if(!edgeExists(edgeId))
 						graph.addEdge(edgeId, node1, node2);
