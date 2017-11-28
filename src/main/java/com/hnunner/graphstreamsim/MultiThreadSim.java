@@ -3,16 +3,20 @@ package com.hnunner.graphstreamsim;
 import java.awt.BorderLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantLock;
-
+import java.util.stream.Collectors;
 import javax.swing.JButton;
 import javax.swing.JFrame;
 
+import org.graphstream.graph.EdgeRejectedException;
 import org.graphstream.graph.Graph;
-import org.graphstream.graph.implementations.MultiGraph;
+import org.graphstream.graph.Node;
+import org.graphstream.graph.implementations.SingleGraph;
 import org.graphstream.ui.swingViewer.ViewPanel;
 import org.graphstream.ui.view.Viewer;
 
@@ -22,7 +26,7 @@ public class MultiThreadSim {
 		new MultiThreadSim();
 	}
 
-	private static final int DELAY = 100;
+	private static final int DELAY = 500;
 
 	final int nrOfNodes = 100;
 	final int nrOfWorkers = 10;
@@ -51,7 +55,7 @@ public class MultiThreadSim {
 	}
 
 	Graph createGraph() {
-		Graph graph = new MultiGraph("whoop");
+		Graph graph = new SingleGraph("whoop");
 
 		for (int i = 0; i < nrOfNodes; i++)
 			graph.addNode(Integer.toString(i));
@@ -114,42 +118,78 @@ public class MultiThreadSim {
 			
 			for (int i = 0; i < edgeCount; i++) {
 				
-				lock.lock();
+				//lock.lock();
+				String edgeId = null;
 				
 				try {
 					
+					// Find 2 nodes to connect, using a weighted random method based on the degree of each node
+					// i.e. we are more likely to choose nodes with a small degree
+					
 					int count = 0;
-					int a = rand.nextInt(graph.getNodeCount());
-					int b = (a + 1) % graph.getNodeCount();
-					String edgeId = "edge|" + workerId + ":" + a + "," + b;
+
 					
-					// Try finding a valid edge, but give up after 10 attempts
-					while(graph.getEdge(edgeId) != null || count >= 10) {
-						a = rand.nextInt(graph.getNodeCount());
-						b = (a + 1) % graph.getNodeCount();
-						edgeId = "edge|" + workerId + ":" + a + ":" + b;
-						count++;
-					}
+					Node node1 = null, node2 = null;
 					
-					if(graph.getEdge(edgeId) == null) {
-						System.out.println(edgeId);
-						graph.addEdge(edgeId, a, b);
-					} else {
-						System.out.println("Could not add edge " + edgeId);
-					}
-	
+					final int maxDegree = graph.getNodeSet().stream().mapToInt(n -> n.getDegree()).max().getAsInt();
+					final Map<Node, Integer> nodeMap =  graph.getNodeSet().stream().collect(Collectors.toMap(n -> n, n -> maxDegree - n.getDegree() + 1));
+					
+					
+					do {
+						double bestValue = Double.MAX_VALUE;
+						
+						for (Entry<Node, Integer> nodeEntry : nodeMap.entrySet()) {
+							// Sample an exponential distribution 
+							double value = -Math.log(rand.nextDouble()) / Double.valueOf(nodeEntry.getValue());
+							
+							if (value < bestValue) {
+								bestValue = value;
+								
+								node1 = nodeEntry.getKey();
+							}
+						}
+						
+						// Temporarily remove the first chosen node so we don't pick it again
+						nodeMap.remove(node1);
+
+						bestValue = Double.MAX_VALUE;
+						for (Entry<Node, Integer> nodeEntry : nodeMap.entrySet()) {
+							// Sample an exponential distribution 
+							double value = -Math.log(rand.nextDouble()) / Double.valueOf(nodeEntry.getValue());
+
+							if (value < bestValue) {
+								bestValue = value;
+								
+								node2 = nodeEntry.getKey();
+							}
+						}
+						
+						// Restore the map so we don't have to create the whole thing again
+						nodeMap.put(node1, node1.getDegree());
+						
+						edgeId = "edge|" +  node1.getId() + "," + node2.getId();
+						
+					} while(edgeExists(edgeId) || count == 3);
+					
+					if(!edgeExists(edgeId))
+						graph.addEdge(edgeId, node1, node2);
+					
 					// Sleep for a while
 					Thread.sleep(DELAY + rand.nextInt(max + 1 -min) + min);
-					
+				} catch (EdgeRejectedException e) {
+					// For some reason, sometimes an edge is still rejected!
+					System.out.println("Edge rejected, " + edgeId + " edge exists: " + edgeExists(edgeId));
 				} catch (Exception e) {
 					// Catch exceptions from graph too, just to be sure
 					e.printStackTrace();
 				} finally {
-					lock.unlock();
+					//lock.unlock();
 				}
 			}
 		}
 		
-
+		boolean edgeExists(String edgeId) {
+			return graph.getEdge(edgeId) != null;
+		}
 	}
 }
